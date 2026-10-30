@@ -510,9 +510,12 @@
     if(updates.remaining !== undefined && Number(updates.remaining) !== Number(bd.remaining)){
       historyInserts.push({bottle_id:bottleId, event_date:date, type:"remaining", staff:staff, note:"残量更新: "+remLabel(Number(updates.remaining))});
     }
+    if(updates.staffInCharge !== undefined && updates.staffInCharge !== (bd.staffInCharge||"")){
+      historyInserts.push({bottle_id:bottleId, event_date:date, type:"staff", staff:staff, note:"担当変更: "+(bd.staffInCharge||"未設定")+" → "+(updates.staffInCharge||"未設定")});
+    }
     sb.from("bottles").update({
       shelf:updates.shelf, slot:updates.slot, remaining:updates.remaining,
-      expiry_date:updates.expiryDate, notes:updates.notes, updated_at:nowIso()
+      staff_in_charge:updates.staffInCharge, expiry_date:updates.expiryDate, notes:updates.notes, updated_at:nowIso()
     }).eq("id", bottleId).then(function(res){
       if(res.error){ handleDbError(res.error); return; }
       if(historyInserts.length){ sb.from("bottle_history").insert(historyInserts).then(function(){}); }
@@ -928,7 +931,7 @@
       return '<button type="button" class="rem-btn'+(Number(b.remaining)===r.value?" is-selected":"")+'" data-val="'+r.value+'">'+r.label+'</button>';
     }).join("");
     var hist = (b.history||[]).slice().reverse().map(function(h){
-      var lbl = {in:"入店",visit:"更新",moved:"移動",remaining:"残量",finished:"終了"}[h.type] || h.type;
+      var lbl = {in:"入店",visit:"更新",moved:"移動",remaining:"残量",staff:"担当変更",finished:"終了"}[h.type] || h.type;
       return '<div class="timeline-row"><span class="td">'+fmtDateShort(h.date)+'</span><span>'+lbl+' ・ '+escapeHtml(h.staff||"")+(h.note?(" — "+escapeHtml(h.note)):"")+'</span></div>';
     }).join("") || '<p class="empty-note">記録はまだありません。</p>';
     var photoHtml = b.photoDataUrl ? '<img class="photo-thumb" style="width:100%;height:140px;" src="'+b.photoDataUrl+'">' : '<p class="empty-note">写真は登録されていません。</p>';
@@ -940,7 +943,6 @@
         '<div class="info-grid">'+
           '<div><div class="k">ボトル名</div><div class="v">'+escapeHtml(b.bottleName)+'</div></div>'+
           '<div><div class="k">キープ日</div><div class="v mono">'+fmtDate(b.keptDate)+'</div></div>'+
-          '<div><div class="k">担当</div><div class="v">'+escapeHtml(b.staffInCharge||"―")+'</div></div>'+
           '<div><div class="k">連絡先</div><div class="v">'+escapeHtml(b.contact||"―")+'</div></div></div>'+
         photoHtml+
         '<form id="bottleEditForm" style="margin-top:14px;">'+
@@ -948,6 +950,7 @@
           '<div class="field-row"><div class="field"><label for="be_shelf">棚</label><select id="be_shelf">'+shelfOptions+'</select></div>'+
           '<div class="field"><label for="be_slot">位置番号</label><input type="number" id="be_slot" min="1" value="'+(b.slot||"")+'"></div></div>'+
           '<div class="field"><label>残量</label><div class="remaining-choices" id="be_remChoices">'+remChoices+'</div></div>'+
+          '<div class="field"><label for="be_staff">担当</label><input type="text" id="be_staff" value="'+escapeHtml(b.staffInCharge||"")+'" placeholder="スタッフ名"></div>'+
           '<div class="field"><label for="be_expiry">キープ期限</label><input type="date" id="be_expiry" value="'+(b.expiryDate||"")+'"></div>'+
           '<div class="field"><label for="be_notes">メモ</label><textarea id="be_notes">'+escapeHtml(b.notes||"")+'</textarea></div>'+
           '<button type="submit" class="btn btn-primary btn-block">変更を保存</button></form>'+
@@ -973,6 +976,7 @@
         shelf: document.getElementById("be_shelf").value,
         slot: document.getElementById("be_slot").value ? Number(document.getElementById("be_slot").value) : null,
         remaining: remSel,
+        staffInCharge: document.getElementById("be_staff").value.trim(),
         expiryDate: document.getElementById("be_expiry").value || null,
         notes: document.getElementById("be_notes").value || ""
       });
