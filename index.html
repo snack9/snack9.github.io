@@ -277,8 +277,10 @@
   var openCustomerId = null;
   var staffNameCache = "";
   var addFormPhotoData = null;
+  var custSortMode = "tier";
 
   try { staffNameCache = localStorage.getItem("s9_staffName") || ""; } catch(e){}
+  try { custSortMode = localStorage.getItem("s9_custSortMode") || "tier"; } catch(e){}
 
   function escapeHtml(s){
     return String(s == null ? "" : s).replace(/[&<>"']/g, function(c){
@@ -323,6 +325,40 @@
     var visits=((cust&&cust.visits)||[]).filter(function(v){return v.type==="visit";});
     if(visits.length===0) return null;
     return visits.reduce(function(a,b){ return a.date>b.date?a:b; }).date;
+  }
+  function sortNameKey(c){ return (c.name_kana && c.name_kana.trim()) || c.name || ""; }
+  function byNameJa(a,b){ return sortNameKey(a).localeCompare(sortNameKey(b), "ja"); }
+  function customerComparator(mode){
+    if(mode === "visit"){
+      return function(a,b){
+        var la = lastVisitDate(a), lb = lastVisitDate(b);
+        if(!la && !lb) return byNameJa(a,b);
+        if(!la) return 1;
+        if(!lb) return -1;
+        if(la === lb) return byNameJa(a,b);
+        return la > lb ? -1 : 1; // 最近来店した方が上
+      };
+    }
+    if(mode === "name"){
+      return byNameJa;
+    }
+    if(mode === "staff"){
+      return function(a,b){
+        var sa = a.staff_in_charge||"", sb = b.staff_in_charge||"";
+        if(!sa && !sb) return byNameJa(a,b);
+        if(!sa) return 1;
+        if(!sb) return -1;
+        if(sa === sb) return byNameJa(a,b);
+        return sa.localeCompare(sb, "ja");
+      };
+    }
+    // "tier"(デフォルト): 来店頻度バッジの順 → 名前順
+    var tierRank = {top:0, high:1, mid:2, low:3, new:4};
+    return function(a,b){
+      var ra = tierRank[tierForCustomer(a).key], rb = tierRank[tierForCustomer(b).key];
+      if(ra!==rb) return ra-rb;
+      return byNameJa(a,b);
+    };
   }
 
   // ---------- Supabase data layer ----------
@@ -440,16 +476,18 @@
       });
     }
 
+    var nameKana = (fd.nameKana||"").trim();
     var existing = findCustomerByName(name);
     if(existing){
       sb.from("customer_visits").insert({customer_id:existing.id, visit_date:keptDate, type:"in", staff:staff, note:"ボトル追加: "+fd.bottleName.trim()}).then(function(){
         var upd = {updated_at:nowIso()};
         if(fd.contact) upd.contact = fd.contact;
         if(staff) upd.staff_in_charge = staff;
+        if(nameKana) upd.name_kana = nameKana;
         sb.from("customers").update(upd).eq("id", existing.id).then(function(){ afterCustomer(existing.id); });
       });
     } else {
-      sb.from("customers").insert({name:name, contact:fd.contact||"", staff_in_charge:staff}).select().single().then(function(res){
+      sb.from("customers").insert({name:name, name_kana:nameKana, contact:fd.contact||"", staff_in_charge:staff}).select().single().then(function(res){
         if(res.error){ handleDbError(res.error); return; }
         sb.from("customer_visits").insert({customer_id:res.data.id, visit_date:keptDate, type:"in", staff:staff, note:"新規キープ登録: "+fd.bottleName.trim()}).then(function(){ afterCustomer(res.data.id); });
       });
@@ -756,11 +794,22 @@
     el.innerHTML = blocks;
   }
 
+  var CUST_SORT_LABELS = {
+    tier: "来店頻度順(よく来る方が上)",
+    visit: "来店日順(最近来た方が上)",
+    name: "名前順(ふりがな優先・あいうえお)",
+    staff: "担当順(あいうえお・未設定は最後)"
+  };
   function renderCustomers(){
     var el = document.getElementById("tab-customers");
     var prevVal = (document.getElementById("custSearch") && document.getElementById("custSearch").value) || "";
+    var sortOptions = Object.keys(CUST_SORT_LABELS).map(function(key){
+      return '<option value="'+key+'"'+(key===custSortMode?" selected":"")+'>'+escapeHtml(CUST_SORT_LABELS[key])+'</option>';
+    }).join("");
     el.innerHTML = '<div class="card"><h2 class="section-title" style="margin-bottom:10px;">お客様検索</h2>'+
-      '<input type="text" id="custSearch" class="search-input" placeholder="お客様名・連絡先・担当・ボトル名・メモで検索" value="'+escapeHtml(prevVal)+'"></div>'+
+      '<input type="text" id="custSearch" class="search-input" placeholder="お客様名・ふりがな・連絡先・担当・ボトル名・メモで検索" value="'+escapeHtml(prevVal)+'">'+
+      '<div class="field" style="margin-top:10px;"><label for="custSort">並び順</label><select id="custSort">'+sortOptions+'</select></div>'+
+      '</div>'+
       '<div class="card" id="custResultsCard"></div>';
     renderCustomerResults();
 
@@ -769,6 +818,14 @@
       // 検索欄そのものは一度だけ作り、入力のたびに結果だけを差し替える。
       // (検索欄ごと作り直すと、日本語入力(IME)やフリック入力のカーソル位置・変換状態が壊れるため)
       s.addEventListener("input", function(){ renderCustomerResults(); });
+    }
+    var sortSel = document.getElementById("custSort");
+    if(sortSel){
+      sortSel.addEventListener("change", function(){
+        custSortMode = sortSel.value;
+        try{ localStorage.setItem("s9_custSortMode", custSortMode); }catch(e){}
+        renderCustomerResults();
+      });
     }
   }
 
@@ -780,6 +837,7 @@
     if(q){
       list = list.filter(function(c){
         if((c.name||"").toLowerCase().indexOf(q)!==-1) return true;
+        if((c.name_kana||"").toLowerCase().indexOf(q)!==-1) return true;
         if((c.contact||"").toLowerCase().indexOf(q)!==-1) return true;
         if((c.staff_in_charge||"").toLowerCase().indexOf(q)!==-1) return true;
         var bl = bottlesForCustomer(c.id);
@@ -789,12 +847,7 @@
         return staffNames.indexOf(q)!==-1;
       });
     }
-    var tierRank = {top:0, high:1, mid:2, low:3, new:4};
-    list.sort(function(a,b){
-      var ra = tierRank[tierForCustomer(a).key], rb = tierRank[tierForCustomer(b).key];
-      if(ra!==rb) return ra-rb;
-      return (a.name||"").localeCompare(b.name||"", "ja");
-    });
+    list.sort(customerComparator(custSortMode));
 
     var cards = list.map(function(c){
       var tier = tierForCustomer(c);
@@ -820,6 +873,8 @@
         '<div class="cust-meta">担当: '+escapeHtml(c.staff_in_charge||"―")+(c.contact?' ・ '+escapeHtml(c.contact):'')+'</div></div>'+
         '<div class="cust-right">ボトル '+bl.length+'本<br>最終来店: '+relDays(last)+'</div></div>'+
         '<div class="cust-detail'+(isOpen?" open":"")+'" data-cust-detail="'+c.id+'">'+
+          '<div class="field" style="margin-bottom:10px;"><label for="kana_'+c.id+'">ふりがな(あいうえお順に使用)</label>'+
+            '<input type="text" id="kana_'+c.id+'" data-cust-kana="'+c.id+'" value="'+escapeHtml(c.name_kana||"")+'" placeholder="たなか"></div>'+
           '<div style="display:flex; flex-direction:column; gap:8px;">'+bottleRows+'</div>'+
           '<div class="cust-actions"><button class="btn btn-secondary btn-sm" data-action="log-visit" data-id="'+c.id+'">来店を記録</button>'+
             '<button class="btn btn-secondary btn-sm" data-action="prefill-add" data-name="'+escapeHtml(c.name)+'">ボトルを追加</button>'+
@@ -847,6 +902,7 @@
         '<div class="field"><label for="f_customerName">お客様名</label>'+
           '<input type="text" id="f_customerName" list="custList" autocomplete="off" placeholder="例: 田中様" required>'+
           '<datalist id="custList">'+datalist+'</datalist></div>'+
+        '<div class="field"><label for="f_nameKana">ふりがな(任意・あいうえお順に使用)</label><input type="text" id="f_nameKana" placeholder="たなか"></div>'+
         '<div class="field-row">'+
           '<div class="field"><label for="f_contact">連絡先(任意)</label><input type="text" id="f_contact" placeholder="電話・LINE等"></div>'+
           '<div class="field"><label for="f_staff">担当スタッフ</label><input type="text" id="f_staff" value="'+escapeHtml(staffNameCache)+'" placeholder="スタッフ名"></div>'+
@@ -1218,6 +1274,16 @@
       else { val = val.trim(); if(field==="label" && !val){ toast("棚の名前は空にできません"); renderSettings(); return; } }
       updateShelfField(key, field, val);
     }
+    if(e.target.matches("[data-cust-kana]")){
+      var cid = e.target.dataset.custKana;
+      var val2 = e.target.value.trim();
+      var cur = customers.get(cid);
+      if(cur && (cur.name_kana||"") === val2) return;
+      sb.from("customers").update({name_kana:val2, updated_at:nowIso()}).eq("id", cid).then(function(res){
+        if(res.error){ handleDbError(res.error); return; }
+        toast("ふりがなを保存しました");
+      });
+    }
   });
 
   document.addEventListener("submit", function(e){
@@ -1226,6 +1292,7 @@
       var remBtnSel = document.querySelector("#remChoices .rem-btn.is-selected");
       submitAddBottle({
         customerName: document.getElementById("f_customerName").value,
+        nameKana: document.getElementById("f_nameKana").value,
         contact: document.getElementById("f_contact").value,
         staff: document.getElementById("f_staff").value,
         bottleName: document.getElementById("f_bottleName").value,
