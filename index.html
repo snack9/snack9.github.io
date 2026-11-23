@@ -1162,15 +1162,6 @@
     }).join("") || '<p class="empty-note">スタッフがまだ登録されていません。下から追加してください。</p>';
 
     el.innerHTML =
-      '<div class="card"><h2 class="section-title" style="margin-bottom:2px;">棚(お酒の種類)の管理</h2>'+
-        '<p class="section-sub">棚はお酒の種類ごとに自由に追加・編集・削除できます。ボトルが置かれている棚は削除できません。</p>'+rows+
-        '<hr class="soft">'+
-        '<div class="field-row">'+
-          '<div class="field"><label for="newShelfLabel">新しい棚の名前</label><input type="text" id="newShelfLabel" placeholder="例: カクテル用"></div>'+
-          '<div class="field"><label for="newShelfCapacity">本数の目安</label><input type="number" id="newShelfCapacity" min="1" placeholder="50"></div>'+
-        '</div>'+
-        '<button type="button" class="btn btn-primary btn-sm" id="addShelfBtn">＋ 棚を追加</button>'+
-      '</div>'+
       '<div class="card"><h2 class="section-title" style="margin-bottom:2px;">スタッフ(キャスト)管理</h2>'+
         '<p class="section-sub">ここで登録したスタッフが、担当の候補やシフト表・誕生日カレンダーに使われます。</p>'+staffRows+
         '<hr class="soft">'+
@@ -1180,6 +1171,15 @@
           '<div class="field"><label for="newStaffBDay">誕生日(任意)</label><input type="number" id="newStaffBDay" min="1" max="31" placeholder="日"></div>'+
         '</div>'+
         '<button type="button" class="btn btn-primary btn-sm" id="addStaffBtn">＋ スタッフを追加</button>'+
+      '</div>'+
+      '<div class="card"><h2 class="section-title" style="margin-bottom:2px;">棚(お酒の種類)の管理</h2>'+
+        '<p class="section-sub">棚はお酒の種類ごとに自由に追加・編集・削除できます。ボトルが置かれている棚は削除できません。</p>'+rows+
+        '<hr class="soft">'+
+        '<div class="field-row">'+
+          '<div class="field"><label for="newShelfLabel">新しい棚の名前</label><input type="text" id="newShelfLabel" placeholder="例: カクテル用"></div>'+
+          '<div class="field"><label for="newShelfCapacity">本数の目安</label><input type="number" id="newShelfCapacity" min="1" placeholder="50"></div>'+
+        '</div>'+
+        '<button type="button" class="btn btn-primary btn-sm" id="addShelfBtn">＋ 棚を追加</button>'+
       '</div>'+
       '<div class="card"><h2 class="section-title" style="margin-bottom:8px;">この端末の初期担当者名</h2>'+
         '<input type="text" id="deviceStaffName" list="staffDatalistDevice" placeholder="スタッフ名" value="'+escapeHtml(staffNameCache)+'">'+
