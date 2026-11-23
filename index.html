@@ -408,7 +408,9 @@
     });
   }
   function visitsOnDate(ds){
-    // 来店・更新の記録(予約のメモもここに含まれる想定)をその日付で横断的に集める
+    // カレンダーには「予約」だけを表示したいので、本日より後(未来)の日付の記録のみを対象にする。
+    // 本日・過去の日付で記録した通常の来店更新ログはカレンダーには出さない(お客様カード側の履歴ではこれまで通り確認可能)。
+    if(ds <= todayStr()) return [];
     var out = [];
     customers.forEach(function(c){
       (c.visits||[]).forEach(function(v){
@@ -1275,7 +1277,7 @@
           '<button class="cal-nav-btn" data-action="cal-next" type="button">›</button></div>'+
         '<div class="cal-grid" style="margin-bottom:4px;">'+WEEKDAY_LABELS_JA.map(function(w){ return '<div class="cal-wd">'+w+'</div>'; }).join("")+'</div>'+
         '<div class="cal-grid">'+cells+'</div>'+
-        '<p class="helper-text" style="margin-top:10px;">日付をタップすると、来店・予約や誕生日・シフトの詳細、予約の追加ができます。</p>'+
+        '<p class="helper-text" style="margin-top:10px;">日付をタップすると、予約や誕生日・シフトの詳細、予約の追加ができます(予約は本日より後の日付のみ)。</p>'+
       '</div>'+
       '<div class="card"><h2 class="section-title" style="margin-bottom:8px;">今月の誕生日</h2>'+bdayHtml+'</div>';
   }
@@ -1446,22 +1448,24 @@
   function openDayModal(ds){
     var parts = ds.split("-"); var y=Number(parts[0]), m=Number(parts[1]), d=Number(parts[2]);
 
+    var isFutureDay = ds > todayStr();
     var visits = visitsOnDate(ds);
-    var visitHtml = visits.length===0 ? '<p class="empty-note">この日の来店・予約の記録はありません。</p>' :
+    var visitHtml = visits.length===0 ? '<p class="empty-note">この日の予約はありません。</p>' :
       visits.map(function(v){
         var lbl = v.type==="in"?"入店":(v.type==="visit"?"更新":v.type);
         return '<div class="bday-list-row"><span>'+escapeHtml(v.customerName)+' ・ '+lbl+(v.note?(" — "+escapeHtml(v.note)):"")+'</span>'+
           '<button type="button" class="timeline-edit-btn" data-action="edit-visit" data-id="'+v.id+'" data-date="'+ds+'" data-note="'+escapeHtml(v.note||"")+'">編集</button></div>';
       }).join("");
     var dayCustDatalist = '<datalist id="dayCustDatalist">'+Array.from(customers.values()).map(function(c){ return '<option value="'+escapeHtml(c.name)+'">'; }).join("")+'</datalist>';
-    var visitAddHtml =
-      '<form id="dayVisitAddForm" style="margin-top:10px;">'+
-        '<input type="hidden" id="dv_date" value="'+ds+'">'+
-        '<div class="field"><label for="dv_customer">お客様名</label><input type="text" id="dv_customer" list="dayCustDatalist" autocomplete="off" placeholder="登録済みのお客様名"></div>'+
-        dayCustDatalist+
-        '<div class="field"><label for="dv_note">メモ(予約内容など)</label><input type="text" id="dv_note" placeholder="例: 19時・2名のご予約"></div>'+
-        '<button type="submit" class="btn btn-primary btn-block">来店・予約として記録する</button>'+
-      '</form>';
+    var visitAddHtml = !isFutureDay
+      ? '<p class="helper-text" style="margin-top:8px;">本日・過去の日付には予約を追加できません。通常の来店・更新は「顧客」タブから記録してください。</p>'
+      : '<form id="dayVisitAddForm" style="margin-top:10px;">'+
+          '<input type="hidden" id="dv_date" value="'+ds+'">'+
+          '<div class="field"><label for="dv_customer">お客様名</label><input type="text" id="dv_customer" list="dayCustDatalist" autocomplete="off" placeholder="登録済みのお客様名"></div>'+
+          dayCustDatalist+
+          '<div class="field"><label for="dv_note">メモ(予約内容など)</label><input type="text" id="dv_note" placeholder="例: 19時・2名のご予約"></div>'+
+          '<button type="submit" class="btn btn-primary btn-block">予約として記録する</button>'+
+        '</form>';
 
     var bdays = birthdaysOnMonthDay(m, d);
     var bdayHtml = bdays.length===0 ? '<p class="empty-note">この日の誕生日はありません。</p>' :
@@ -1496,7 +1500,7 @@
       '<div class="modal-backdrop" data-action="close-modal"><div class="modal-sheet">'+
         '<div class="modal-head"><div><h2 class="section-title">'+y+'年'+m+'月'+d+'日</h2></div>'+
           '<button class="modal-close" data-action="close-modal">×</button></div>'+
-        '<div class="section-sub" style="margin-bottom:6px;">来店・予約</div>'+visitHtml+visitAddHtml+
+        '<div class="section-sub" style="margin-bottom:6px;">予約</div>'+visitHtml+visitAddHtml+
         '<hr class="sep">'+
         '<div class="section-sub" style="margin-bottom:6px;">誕生日</div>'+bdayHtml+
         '<hr class="sep">'+
