@@ -242,12 +242,13 @@
   .cal-nav-btn{background:var(--surface-2); border:1px solid var(--line); border-radius:999px; width:32px; height:32px; cursor:pointer; color:var(--ink-soft); font-size:15px; flex:none;}
   .cal-grid{display:grid; grid-template-columns:repeat(7,1fr); gap:4px;}
   .cal-wd{text-align:center; font-size:11px; color:var(--muted); padding:4px 0;}
-  .cal-day{min-height:56px; border:1px solid var(--line); border-radius:8px; background:var(--surface-2); padding:4px; cursor:pointer; display:flex; flex-direction:column; gap:2px; overflow:hidden;}
+  .cal-day{min-height:66px; border:1px solid var(--line); border-radius:8px; background:var(--surface-2); padding:4px; cursor:pointer; display:flex; flex-direction:column; gap:2px; overflow:hidden;}
   .cal-day.empty{visibility:hidden; cursor:default;}
   .cal-day.is-today{border-color:var(--accent); border-width:2px;}
   .cal-daynum{font-size:11px; font-family:var(--font-mono); color:var(--ink-soft); font-weight:700;}
   .cal-badge{font-size:8.5px; border-radius:5px; padding:1px 3px; line-height:1.4; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .cal-badge.birthday{background:var(--tint-5); color:var(--accent-ink);}
+  .cal-badge.visit{background:var(--good-bg); color:var(--good);}
   .cal-badge.shift{background:var(--surface); border:1px solid var(--line); color:var(--ink-soft);}
   .cal-more{font-size:9px; color:var(--muted);}
   .bday-list-row{display:flex; justify-content:space-between; align-items:center; gap:8px; padding:7px 0; border-top:1px solid var(--line); font-size:13px;}
@@ -405,6 +406,16 @@
     return shiftsList.filter(function(s){ return s.shift_date===ds; }).sort(function(a,b){
       return (a.start_time||"").localeCompare(b.start_time||"");
     });
+  }
+  function visitsOnDate(ds){
+    // 来店・更新の記録(予約のメモもここに含まれる想定)をその日付で横断的に集める
+    var out = [];
+    customers.forEach(function(c){
+      (c.visits||[]).forEach(function(v){
+        if(v.date===ds) out.push({id:v.id, customerId:c.id, customerName:c.name, type:v.type, note:v.note});
+      });
+    });
+    return out;
   }
   function daysUntilBirthday(month, day){
     var now = new Date(todayStr()+"T00:00:00");
@@ -1229,14 +1240,18 @@
     for(var d=1; d<=dim; d++){
       var ds = ymdStr(calYear, calMonth, d);
       var bdays = birthdaysOnMonthDay(calMonth, d);
+      var vis = visitsOnDate(ds);
       var sh = shiftsOnDate(ds);
-      var badges = "";
-      bdays.slice(0,2).forEach(function(b){ badges += '<span class="cal-badge birthday">🎂'+escapeHtml(b.name)+'</span>'; });
-      sh.slice(0,2).forEach(function(s){
+      var badgeItems = [];
+      bdays.forEach(function(b){ badgeItems.push({cls:"birthday", text:"🎂"+b.name}); });
+      vis.forEach(function(v){ badgeItems.push({cls:"visit", text:v.customerName}); });
+      sh.forEach(function(s){
         var st = staffList.find(function(x){ return x.id===s.staff_id; });
-        badges += '<span class="cal-badge shift">'+escapeHtml(st?st.name:"?")+(s.start_time?(" "+s.start_time.slice(0,5)):"")+'</span>';
+        badgeItems.push({cls:"shift", text:(st?st.name:"?")+(s.start_time?(" "+s.start_time.slice(0,5)):"")});
       });
-      var moreCount = Math.max(0, bdays.length-2) + Math.max(0, sh.length-2);
+      var shownBadges = badgeItems.slice(0,3);
+      var moreCount = badgeItems.length - shownBadges.length;
+      var badges = shownBadges.map(function(it){ return '<span class="cal-badge '+it.cls+'">'+escapeHtml(it.text)+'</span>'; }).join("");
       var moreHtml = moreCount>0 ? '<span class="cal-more">+'+moreCount+'</span>' : "";
       cells += '<div class="cal-day'+(ds===todayS?" is-today":"")+'" data-action="open-day" data-date="'+ds+'">'+
         '<div class="cal-daynum">'+d+'</div>'+badges+moreHtml+'</div>';
@@ -1260,7 +1275,7 @@
           '<button class="cal-nav-btn" data-action="cal-next" type="button">›</button></div>'+
         '<div class="cal-grid" style="margin-bottom:4px;">'+WEEKDAY_LABELS_JA.map(function(w){ return '<div class="cal-wd">'+w+'</div>'; }).join("")+'</div>'+
         '<div class="cal-grid">'+cells+'</div>'+
-        '<p class="helper-text" style="margin-top:10px;">日付をタップすると、誕生日やシフトの詳細・追加ができます。</p>'+
+        '<p class="helper-text" style="margin-top:10px;">日付をタップすると、来店・予約や誕生日・シフトの詳細、予約の追加ができます。</p>'+
       '</div>'+
       '<div class="card"><h2 class="section-title" style="margin-bottom:8px;">今月の誕生日</h2>'+bdayHtml+'</div>';
   }
@@ -1427,9 +1442,27 @@
       '</div></div>';
   }
 
-  // カレンダーの日付詳細(誕生日・シフト追加/削除)
+  // カレンダーの日付詳細(来店・予約/誕生日/シフトの確認・追加・削除)
   function openDayModal(ds){
     var parts = ds.split("-"); var y=Number(parts[0]), m=Number(parts[1]), d=Number(parts[2]);
+
+    var visits = visitsOnDate(ds);
+    var visitHtml = visits.length===0 ? '<p class="empty-note">この日の来店・予約の記録はありません。</p>' :
+      visits.map(function(v){
+        var lbl = v.type==="in"?"入店":(v.type==="visit"?"更新":v.type);
+        return '<div class="bday-list-row"><span>'+escapeHtml(v.customerName)+' ・ '+lbl+(v.note?(" — "+escapeHtml(v.note)):"")+'</span>'+
+          '<button type="button" class="timeline-edit-btn" data-action="edit-visit" data-id="'+v.id+'" data-date="'+ds+'" data-note="'+escapeHtml(v.note||"")+'">編集</button></div>';
+      }).join("");
+    var dayCustDatalist = '<datalist id="dayCustDatalist">'+Array.from(customers.values()).map(function(c){ return '<option value="'+escapeHtml(c.name)+'">'; }).join("")+'</datalist>';
+    var visitAddHtml =
+      '<form id="dayVisitAddForm" style="margin-top:10px;">'+
+        '<input type="hidden" id="dv_date" value="'+ds+'">'+
+        '<div class="field"><label for="dv_customer">お客様名</label><input type="text" id="dv_customer" list="dayCustDatalist" autocomplete="off" placeholder="登録済みのお客様名"></div>'+
+        dayCustDatalist+
+        '<div class="field"><label for="dv_note">メモ(予約内容など)</label><input type="text" id="dv_note" placeholder="例: 19時・2名のご予約"></div>'+
+        '<button type="submit" class="btn btn-primary btn-block">来店・予約として記録する</button>'+
+      '</form>';
+
     var bdays = birthdaysOnMonthDay(m, d);
     var bdayHtml = bdays.length===0 ? '<p class="empty-note">この日の誕生日はありません。</p>' :
       bdays.map(function(b){
@@ -1463,6 +1496,8 @@
       '<div class="modal-backdrop" data-action="close-modal"><div class="modal-sheet">'+
         '<div class="modal-head"><div><h2 class="section-title">'+y+'年'+m+'月'+d+'日</h2></div>'+
           '<button class="modal-close" data-action="close-modal">×</button></div>'+
+        '<div class="section-sub" style="margin-bottom:6px;">来店・予約</div>'+visitHtml+visitAddHtml+
+        '<hr class="sep">'+
         '<div class="section-sub" style="margin-bottom:6px;">誕生日</div>'+bdayHtml+
         '<hr class="sep">'+
         '<div class="section-sub" style="margin-bottom:6px;">シフト</div>'+shiftHtml+addFormHtml+
@@ -1690,6 +1725,18 @@
       var shEnd = document.getElementById("sh_end").value || null;
       var shNote = document.getElementById("sh_note").value || "";
       addShift(shStaff, shDate, shStart, shEnd, shNote);
+      return;
+    }
+    if(e.target.id === "dayVisitAddForm"){
+      e.preventDefault();
+      var dvDate = document.getElementById("dv_date").value;
+      var dvName = document.getElementById("dv_customer").value.trim();
+      var dvNote = document.getElementById("dv_note").value || "";
+      if(!dvName){ toast("お客様名を入力してください"); return; }
+      var dvCust = findCustomerByName(dvName);
+      if(!dvCust){ toast("登録済みのお客様名を選んでください(見つかりません)"); return; }
+      logVisit(dvCust.id, null, dvDate, dvNote);
+      closeModal();
       return;
     }
   });
